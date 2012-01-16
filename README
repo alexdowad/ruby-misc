@@ -1,0 +1,15 @@
+This is a library of code samples, posted here for two reasons:
+
+- For perusal by potential clients/employers
+- To share useful code with any other developers who are interested
+
+Most of the code is written in Ruby 1.9. (Some is compatible with Ruby 1.8, but 
+
+Overview:
+
+/ruby-core                -- general-purpose Ruby utilities, such as extensions to core classes
+/ruby-core/strings.rb     -- extensions to String and Regex
+/ruby-core/collections.rb -- extensions to Enumerable, Array, Set, and Hash
+/ruby-core/threads.rb     -- threading utilities
+/ruby-core/kernel.rb      -- generally useful functions which don't have an obvious "home"
+                             so I put them in Kernel so they will be available everywhere
