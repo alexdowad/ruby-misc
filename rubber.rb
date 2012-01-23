@@ -43,3 +43,18 @@ class Class
     end
   end
 end
+
+#*********************************************************************
+
+# An implementation of the "Visitor pattern" for Ruby...
+# (Compare to the verbose, bloated implementations you find in less 
+#   powerful languages)
+
+module Enumerable
+  def accept_visitor(visitor)
+    each do |elem|
+      method = "visit#{elem.class}".to_sym
+      elem.send(method,elem) if elem.respond_to? method
+    end
+  end
+end
