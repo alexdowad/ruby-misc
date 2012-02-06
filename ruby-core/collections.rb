@@ -243,12 +243,18 @@ class Array
   #*****************************************************************************
   # SET METHODS
   # Array doesn't have a method to add a whole enumeration of elements at a time
+  # (although you can append another array with "concat")
   # Extend it with a method which comes from Set
+  # Also add exclusive or
   #*****************************************************************************
 
   def merge(enum)
     enum.each { |x| self << x }
     self
+  end
+
+  def ^(other)
+    (self - other).concat(other - self)
   end
 
   # And one more general utility method:
