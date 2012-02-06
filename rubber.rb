@@ -21,7 +21,7 @@ end
 
 #*********************************************************************
 
-# This was originally made for ActiveRecord...
+# This was made for ActiveRecord...
 # With AR, you can have multiple in-memory objects which represent the
 #   same DB record
 # This allows all the objects which represent the same record to share
@@ -46,6 +46,20 @@ end
 
 #*********************************************************************
 
+# Null object
+# (Can be used to avoid nil checks)
+
+class Null
+  def to_s
+    ""
+  end
+  def method_missing(method,*args)
+    self
+  end
+end
+
+#*********************************************************************
+
 # An implementation of the "Visitor pattern" for Ruby...
 # (Compare to the verbose, bloated implementations you find in less 
 #   powerful languages)
@@ -58,3 +72,17 @@ module Enumerable
     end
   end
 end
+
+# Sample usage:
+# Say you have a class hierarchy with Animal at the top, and 3 subclasses:
+#   Cat, Dog, and Bird
+
+# class CountAnimals
+#   def initialize;   @cats = @dogs = @birds = 0; end
+#   def visitCat(_);  @cats  += 1; end
+#   def visitDog(_);  @dogs  += 1; end
+#   def visitBird(_); @birds += 1; end
+# end
+
+# counter = CountAnimals.new
+# animals.accept_visitor(counter)
