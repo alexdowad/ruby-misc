@@ -26,6 +26,8 @@ end
 #   same DB record
 # This allows all the objects which represent the same record to share
 #   other, transient "instance variables"
+# (Naturally, only AR objects within the same process will share the
+#   values of these attributes)
 
 require 'thread'
 
@@ -55,6 +57,40 @@ class Null
   end
   def method_missing(method,*args)
     self
+  end
+end
+
+#*********************************************************************
+
+# "cached_method" -- create a method whose return value will be cached
+#   for a given number of seconds
+# If the same method is called on the same object after the cache has expired,
+#   the method body will be executed again and the cache updated
+
+# Example:
+
+# class MyClass
+#   # refresh users every 5 minutes
+#   cached_method(:users,300) do
+#     User.all
+#   end
+# end
+
+class Class
+  # create a method whose return value will be cached for "cache_for" seconds
+  def cached_method(method,cache_for,&body)
+    define_method("__#{method}__".to_sym) do |*a,&b|
+      body.call(*a,&b)
+    end
+    class_eval(<<METHOD)
+      def #{method}(*a,&b)
+        unless @#{method}_cache && (@#{method}_expiry > Time.now)
+          @#{method}_cache  = __#{method}__(*a,&b)
+          @#{method}_expiry = Time.now + #{cache_for}
+        end
+        @#{method}_cache
+      end
+METHOD
   end
 end
 
