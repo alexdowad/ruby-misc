@@ -254,6 +254,8 @@ class Array
   end
 
   def ^(other)
+    # there are a few ways to implement this, but this seems to have
+    #   better performance than the other ways I tried
     (self - other).concat(other - self)
   end
 
