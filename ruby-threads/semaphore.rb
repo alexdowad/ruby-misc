@@ -4,6 +4,20 @@
 # If a thread tries to acquire a permit when none are available,
 #   it will block until one is released
 
+# This can be used for limiting the number of threads which can access
+#   a given resource to a fixed number
+
+# Usage:
+# semaphore.with_permit { use_resource }
+# ...or:
+# semaphore.acquire
+# use_resource
+# semaphore.release
+
+# Note that if a thread which never acquired a permit "releases" one,
+#   this will permanently increase the number of permits available
+# If this is your intention, use "add_permit" to make that clear
+
 require 'atomic' # must install 'atomic' gem
 require 'thread'
 
@@ -44,6 +58,7 @@ class Semaphore
       end
     end
   end
+  alias :add_permit :release
 
   def try_acquire
     c = @available.value
