@@ -9,7 +9,9 @@
 
 # Usage:
 # semaphore.with_permit { use_resource }
+
 # ...or:
+
 # semaphore.acquire
 # use_resource
 # semaphore.release
@@ -61,8 +63,10 @@ class Semaphore
   alias :add_permit :release
 
   def try_acquire
-    c = @available.value
-    @available.compare_and_set(c,c-1)
+    while(true)
+      c = @available.value
+      return c > 0 if @available.compare_and_set(c,c-1)
+    end
   end
 
   def to_s
