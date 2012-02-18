@@ -132,6 +132,19 @@ class ReadWriteLock
       end
     end
   end
+
+  def to_s
+    c = @counter.value
+    s = if c >= RUNNING_WRITER
+      "1 writer running, "
+    elsif (c & MAX_READERS) > 0
+      "#{c & MAX_READERS} readers running, "
+    else
+      ""
+    end
+
+    "#<ReadWriteLock:#{object_id.to_s(16)} #{s}#{(c & MAX_WRITERS) / WAITING_WRITER} writers waiting>"
+  end
 end
 
 if __FILE__ == $0
