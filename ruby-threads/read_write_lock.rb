@@ -8,6 +8,7 @@
 #   wait (so writers are not starved)
 
 # Written by Alex Dowad
+# Bug fixes contributed by Alex Kliuchunikau
 # Thanks to Doug Lea for java.util.concurrent.ReentrantReadWriteLock (used for inspiration)
 
 # Usage:
