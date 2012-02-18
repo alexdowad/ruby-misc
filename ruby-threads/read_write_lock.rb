@@ -16,9 +16,16 @@
 # lock.with_read_lock  { data.retrieve }
 # lock.with_write_lock { data.modify! }
 
-# Implementation note: A goal for this implementation is to make the "main" (uncontended)
-#   path for readers lock-free
+# Implementation notes: 
+# A goal is to make the uncontended path for both readers/writers lock-free
 # Only if there is reader-writer or writer-writer contention, should locks be used
+# Internal state is represented by a single integer ("counter"), and updated 
+#  using atomic compare-and-swap operations
+# When the counter is 0, the lock is free
+# Each reader increments the counter by 1 when acquiring a read lock
+#   (and decrements by 1 when releasing the read lock)
+# The counter is increased by (1 << 15) for each writer waiting to acquire the
+#   write lock, and by (1 << 30) if the write lock is taken
 
 require 'atomic'
 require 'thread'
@@ -26,63 +33,97 @@ require 'thread'
 class ReadWriteLock
   def initialize
     @counter      = Atomic.new(0)         # single integer which represents lock state
-                                          # 0 = free
-                                          # +1 each concurrently running reader
-                                          # +(1 << 16) for each waiting OR running writer
-                                          # so @counter >= (1 << 16) means at least one writer is waiting/running
-                                          # and (@counter & ((1 << 16)-1)) > 0 means at least one reader is running
     @reader_q     = ConditionVariable.new # queue for waiting readers
     @reader_mutex = Mutex.new             # to protect reader queue
     @writer_q     = ConditionVariable.new # queue for waiting writers
     @writer_mutex = Mutex.new             # to protect writer queue
   end
 
-  WRITER_INCREMENT = 1 << 16              # must be a power of 2!
-  MAX_READERS      = WRITER_INCREMENT - 1
+  WAITING_WRITER  = 1 << 15
+  RUNNING_WRITER  = 1 << 30
+  MAX_READERS     = WAITING_WRITER - 1
+  MAX_WRITERS     = RUNNING_WRITER - MAX_READERS - 1
 
   def with_read_lock
+    acquire_read_lock
+    yield
+    release_read_lock
+  end
+
+  def with_write_lock
+    acquire_write_lock
+    yield
+    release_write_lock
+  end
+
+  def acquire_read_lock
     while(true)
       c = @counter.value
       raise "Too many reader threads!" if (c & MAX_READERS) == MAX_READERS
-      if c >= WRITER_INCREMENT
+
+      # If a writer is running OR waiting, we need to wait
+      if c >= WAITING_WRITER
+        # But it is possible that the writer could finish and decrement @counter right here...
         @reader_mutex.synchronize do 
-          @reader_q.wait(@reader_mutex) if @counter.value >= WRITER_INCREMENT
+          # So check again inside the synchronized section
+          @reader_q.wait(@reader_mutex) if @counter.value >= WAITING_WRITER
         end
       else
         break if @counter.compare_and_swap(c,c+1)
       end
-    end
+    end    
+  end
 
-    yield
-
+  def release_read_lock
     while(true)
       c = @counter.value
       if @counter.compare_and_swap(c,c-1)
-        if c >= WRITER_INCREMENT && (c & MAX_READERS) == 1
-          @writer_mutex.synchronize { @writer_q.signal }     
+        # If one or more writers were waiting, and we were the last reader, wake a writer up
+        if c >= WAITING_WRITER && (c & MAX_READERS) == 1
+          @writer_mutex.synchronize { @writer_q.signal }
         end
         break
       end
     end
   end
 
-  def with_write_lock(&b)
+  def acquire_write_lock
     while(true)
       c = @counter.value
-      if @counter.compare_and_swap(c,c+WRITER_INCREMENT)
-        @writer_mutex.synchronize do
-          @writer_q.wait(@writer_mutex) if (@counter.value & MAX_READERS) > 0
+      raise "Too many writers!" if (c & MAX_WRITERS) == MAX_WRITERS
+
+      if c == 0 # no readers OR writers running
+        # if we successfully swap the RUNNING_WRITER bit on, then we can go ahead
+        break if @counter.compare_and_swap(0,RUNNING_WRITER)
+      elsif @counter.compare_and_swap(c,c+WAITING_WRITER)
+        while(true)
+          # Now we have successfully incremented, so no more readers will be able to increment
+          #   (they will wait instead)
+          # However, readers OR writers could decrement right here, OR another writer could increment
+          @writer_mutex.synchronize do
+            # So we have to do another check inside the synchronized section
+            # If a writer OR reader is running, then go to sleep
+            c = @counter.value
+            @writer_q.wait(@writer_mutex) if (c >= RUNNING_WRITER) || ((c & MAX_READERS) > 0)
+          end
+
+          # We just came out of a wait
+          # If we successfully turn the RUNNING_WRITER bit on with an atomic swap,
+          # Then we are OK to stop waiting and go ahead
+          # Otherwise go back and wait again
+          c = @counter.value
+          break if (c < RUNNING_WRITER) && @counter.compare_and_swap(c,c+RUNNING_WRITER-WAITING_WRITER)
         end
         break
       end
     end
+  end
 
-    yield
-
+  def release_write_lock
     while(true)
       c = @counter.value
-      if @counter.compare_and_swap(c,c-WRITER_INCREMENT)
-        if c-WRITER_INCREMENT >= WRITER_INCREMENT
+      if @counter.compare_and_swap(c,c-RUNNING_WRITER)
+        if (c & MAX_WRITERS) > 0 # if any writers are waiting...
           @writer_mutex.synchronize { @writer_q.signal }
         else
           @reader_mutex.synchronize { @reader_q.broadcast }
@@ -103,6 +144,7 @@ class SimpleMutex
   end
   alias :with_write_lock :with_read_lock
 end
+
 # for seeing whether my correctness test is doing anything...
 # and for seeing how great the overhead of the test is
 # (apart from the cost of locking)
@@ -114,8 +156,19 @@ class FreeAndEasy
 end
 
 require 'benchmark'
-  
-def test(lock, n_readers=20, n_writers=20, reader_iterations=50, writer_iterations=50, reader_sleep=0.001, writer_sleep=0.001)
+
+TOTAL_THREADS = 40
+
+def test(lock)
+  puts "READ INTENSIVE (80% read, 20% write):"
+  single_test(lock, (TOTAL_THREADS * 0.8).floor, (TOTAL_THREADS * 0.2).floor)
+  puts "WRITE INTENSIVE (80% write, 20% read):"
+  single_test(lock, (TOTAL_THREADS * 0.2).floor, (TOTAL_THREADS * 0.8).floor)
+  puts "BALANCED (50% read, 50% write):"
+  single_test(lock, (TOTAL_THREADS * 0.5).floor, (TOTAL_THREADS * 0.5).floor)
+end
+
+def single_test(lock, n_readers, n_writers, reader_iterations=50, writer_iterations=50, reader_sleep=0.001, writer_sleep=0.001)
   puts "Testing #{lock.class} with #{n_readers} readers and #{n_writers} writers. Readers iterate #{reader_iterations} times, sleeping #{reader_sleep}s each time, writers iterate #{writer_iterations} times, sleeping #{writer_sleep}s each time"
   mutex = Mutex.new
   bad   = false
@@ -137,10 +190,14 @@ def test(lock, n_readers=20, n_writers=20, reader_iterations=50, writer_iteratio
                 Thread.new do
                   writer_iterations.times do
                     lock.with_write_lock do
-                      value = data
-                      data  = value+1
+                      # invariant: other threads should NEVER see "data" as an odd number
+                      value = (data += 1)
+                      # if a reader runs right now, this invariant will be violated
                       sleep(writer_sleep)
-                      data  = value+1
+                      # this looks like a strange way to increment twice;
+                      # it's designed so that if 2 writers run at the same time, at least
+                      #   one increment will be lost, and we can detect that at the end
+                      data  = value+1 
                     end
                   end
                 end
