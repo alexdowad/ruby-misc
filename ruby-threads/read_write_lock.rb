@@ -70,7 +70,7 @@ class ReadWriteLock
       c = @counter.value
       if @counter.compare_and_swap(c,c+WRITER_INCREMENT)
         @writer_mutex.synchronize do
-          @writer_q.wait(@writer_mutex) if @counter.value > 0
+          @writer_q.wait(@writer_mutex) if (@counter.value & MAX_READERS) > 0
         end
         break
       end
