@@ -9,6 +9,7 @@
 
 # Written by Alex Dowad
 # Bug fixes contributed by Alex Kliuchnikau
+# Suggestion on avoiding reader starvation from maniek
 # Thanks to Doug Lea for java.util.concurrent.ReentrantReadWriteLock (used for inspiration)
 
 # Usage:
