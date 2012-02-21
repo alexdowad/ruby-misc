@@ -192,6 +192,7 @@ def single_test(lock, n_readers, n_writers, reader_iterations=50, writer_iterati
                 Thread.new do
                   reader_iterations.times do
                     lock.with_read_lock do
+                      print "r"
                       mutex.synchronize { bad = true } if (data % 2) != 0
                       sleep(reader_sleep)
                       mutex.synchronize { bad = true } if (data % 2) != 0
@@ -203,6 +204,7 @@ def single_test(lock, n_readers, n_writers, reader_iterations=50, writer_iterati
                 Thread.new do
                   writer_iterations.times do
                     lock.with_write_lock do
+                      print "w"
                       # invariant: other threads should NEVER see "data" as an odd number
                       value = (data += 1)
                       # if a reader runs right now, this invariant will be violated
