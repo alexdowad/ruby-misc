@@ -46,14 +46,16 @@ class ReadWriteLock
 
   def with_read_lock
     acquire_read_lock
-    yield
+    result = yield
     release_read_lock
+    result
   end
 
   def with_write_lock
     acquire_write_lock
-    yield
+    result = yield
     release_write_lock
+    result
   end
 
   def acquire_read_lock
