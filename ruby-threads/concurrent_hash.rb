@@ -16,15 +16,37 @@ class ConcurrentHash
     @locks   = STRIPINESS.times.collect { ReadWriteLock.new }
   end
 
+  ['dup','clone'].each do |method|
+    class_eval <<DEF
+    def #{method}
+      super.instance_eval do
+        @buckets.map! { |h| h.dup }
+        @locks = STRIPINESS.times.collect { ReadWriteLock.new }
+        self
+      end
+    end
+DEF
+  end
+
+  def hash
+    result = 0
+    0.upto(STRIPINESS-1) do |i|
+      result ^= @locks[i].with_read_lock { @buckets[i].hash }
+    end
+    result
+  end
+
   def [](k);    read_hash(k)   { |h| h[k] }; end
   def []=(k,v); modify_hash(k) { |h| h[k] = v }; end
+  alias :store :[]=
   
-  def key?(k);      read_hash(k) { |h| h.key? k };       end
-  def value?(k);    read_hash(k) { |h| h.value? k };     end
-  def member?(k);   read_hash(k) { |h| h.member? k };    end
-  def include?(k);  read_hash(k) { |h| h.include? k };   end
-  def has_key?(k);  read_hash(k) { |h| h.has_key? k };   end
-  def has_value?(k);read_hash(k) { |h| h.has_value? k }; end
+  def key?(k);       read_hash(k) { |h| h.key? k };       end
+  def value?(k);     read_hash(k) { |h| h.value? k };     end
+  def fetch(k);      read_hash(k) { |h| h.fetch(k) };     end
+  def member?(k);    read_hash(k) { |h| h.member? k };    end
+  def include?(k);   read_hash(k) { |h| h.include? k };   end
+  def has_key?(k);   read_hash(k) { |h| h.has_key? k };   end
+  def has_value?(k); read_hash(k) { |h| h.has_value? k }; end
 
   def key(v)
     read_each_hash do |h|
@@ -33,6 +55,14 @@ class ConcurrentHash
       end
     end
     false  
+  end
+  def assoc(k)
+    read_each_hash do |h|
+      if pair = h.assoc(k)
+        return pair
+      end
+    end
+    false
   end
   def rassoc(v)
     read_each_hash do |h|
@@ -48,22 +78,29 @@ class ConcurrentHash
     false
   end
 
-  def each
-    return to_enum if not block_given?
+  # Benchmark these iterators and compare performance with the implementation
+  #   used by 'select' and 'reject':
 
-    # This could easily be implemented with read_each_hash
-    # But we do *not* want to continuously hold the lock for a bucket while 
-    #   we iterate over every key-value pair in it
-    # (Thus shutting all other threads out)
-    # Especially because the block we yield to could be slow
-    #   (Or even transfer control to a different fiber!)
-    0.upto(STRIPINESS-1) do |i|
-      iterator = @locks[i].with_read_lock { @buckets[i].each }
-      loop do
-        value = @locks[i].with_read_lock { iterator.next }
-        yield value
+  ['each','each_key','each_value','each_pair'].each do |method|
+    class_eval <<DEF
+    def #{method}
+      return to_enum(:#{method}) if not block_given?
+
+      # This could easily be implemented with read_each_hash
+      # But we do *not* want to continuously hold the lock for a bucket while 
+      #   we iterate over every key-value pair in it
+      # (Thus shutting all other threads out)
+      # Especially because the block we yield to could be slow
+      #   (Or even transfer control to a different fiber!)
+      0.upto(STRIPINESS-1) do |i|
+        iterator = @locks[i].with_read_lock { @buckets[i].#{method} }
+        loop do
+          value = @locks[i].with_read_lock { iterator.next }
+          yield value
+        end
       end
     end
+DEF
   end
 
   def size
@@ -73,20 +110,69 @@ class ConcurrentHash
   end 
   alias :length :size
 
-  def to_a
-    result = []
-    read_each_hash { |h| result.concat(h.to_a) }
+  def clear
+    modify_each_hash { |h| h.clear }
+  end
+
+  ['to_a','flatten','keys','values'].each do |method|
+    class_eval <<DEF
+    def #{method}
+      result = []
+      read_each_hash { |h| result.concat(h.#{method}) }
+      result
+    end
+DEF
+  end
+
+  def merge(other)
+    self.dup.merge!(other)
+  end
+  def merge!(other)
+    # should I just call merge! on each individual hash?
+    # need performance benchmarking!
+    other.each do |k,v|
+      modify_hash(k) { |h| h[k] = v }
+    end
+  end
+
+  def rehash
+    modify_each_hash { |h| h.rehash }
+  end
+  def replace(other)
+    clear
+    other.each do |k,v|
+      self[k] = v
+    end
+  end
+  def invert
+    # should this return a ConcurrentHash?
+    result = {}
+    read_each_hash do |h|
+      h.each do |k,v|
+        result[v] = k
+      end
+    end
     result
   end
-  def keys
-    result = []
-    read_each_hash { |h| result.concat(h.keys) }
-    result
-  end
-  def values
-    result = []
-    read_each_hash { |h| result.concat(h.values) }
-    result
+
+  ['select','reject'].each do |method|
+    class_eval <<DEF
+    def #{method}(&block)
+      self.dup.#{method}!(&block)
+    end
+    def #{method}!
+      0.upto(STRIPINESS-1) do |i|
+        lock = @locks[i]
+        lock.acquire_write_lock
+        @buckets[i].#{method}! do |k,v|
+          lock.release_write_lock
+          yield k,v
+          lock.acquire_write_lock
+        end
+        lock.release_write_lock
+      end   
+    end
+DEF
   end
 
   def delete(key)
@@ -117,6 +203,12 @@ class ConcurrentHash
   end
   def default_proc=(value)
     modify_each_hash { |h| h.default_proc = value }
+  end
+  def compare_by_identity?
+    @locks[0].with_read_lock { @buckets[0].compare_by_identity? }
+  end
+  def compare_by_identity
+    modify_each_hash { |h| h.compare_by_identity }
   end
 
   private
