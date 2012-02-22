@@ -39,14 +39,11 @@ DEF
   def [](k);    read_hash(k)   { |h| h[k] }; end
   def []=(k,v); modify_hash(k) { |h| h[k] = v }; end
   alias :store :[]=
-  
-  def key?(k);       read_hash(k) { |h| h.key? k };       end
-  def value?(k);     read_hash(k) { |h| h.value? k };     end
-  def fetch(k);      read_hash(k) { |h| h.fetch(k) };     end
-  def member?(k);    read_hash(k) { |h| h.member? k };    end
-  def include?(k);   read_hash(k) { |h| h.include? k };   end
-  def has_key?(k);   read_hash(k) { |h| h.has_key? k };   end
-  def has_value?(k); read_hash(k) { |h| h.has_value? k }; end
+
+  ['key?','value?','fetch','member?','include?','has_key?','has_value?'].each do |method|
+    class_eval <<DEF
+    def #{method}(k); read_hash(k) { |h| h.#{method}(k) }; end
+DEF
 
   ['key','assoc','rassoc'] do |method|
     class_eval <<DEF
@@ -163,14 +160,12 @@ DEF
 DEF
   end
 
-  def delete(key)
-    modify_each_hash { |h| h.delete(key) }
-  end
-  def delete_if(&block)
-    modify_each_hash { |h| h.delete_if(&block) }
-  end
-  def keep_if(&block)
-    modify_each_hash { |h| h.keep_if(&block) }
+  ['delete',['delete_if','&'],['keep_if','&']].each do |method,prefix|
+    class_eval <<DEF
+    def #{method}(#{prefix}x)
+      modify_each_hash { |h| h.#{method}(#{prefix}x) }
+    end
+DEF
   end
 
   def shift
