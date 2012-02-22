@@ -48,34 +48,22 @@ DEF
   def has_key?(k);   read_hash(k) { |h| h.has_key? k };   end
   def has_value?(k); read_hash(k) { |h| h.has_value? k }; end
 
-  def key(v)
-    read_each_hash do |h|
-      if key = h.key(v)
-        return key
+  ['key','assoc','rassoc'] do |method|
+    class_eval <<DEF
+    def #{method}(x)
+      read_each_hash do |h|
+        if result = h.#{method}(x)
+          return result
+        end
       end
+      false  
     end
-    false  
-  end
-  def assoc(k)
-    read_each_hash do |h|
-      if pair = h.assoc(k)
-        return pair
-      end
-    end
-    false
-  end
-  def rassoc(v)
-    read_each_hash do |h|
-      if pair = h.rassoc(v)
-        return pair
-      end
-    end
-    nil
+DEF
   end
 
   def empty?
-    read_each_hash { |h| return true if h.empty? }
-    false
+    read_each_hash { |h| return false if not h.empty? }
+    true
   end
 
   # Benchmark these iterators and compare performance with the implementation
