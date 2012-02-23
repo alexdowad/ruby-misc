@@ -28,6 +28,7 @@
 # The counter is increased by (1 << 15) for each writer waiting to acquire the
 #   write lock, and by (1 << 30) if the write lock is taken
 
+require 'rubygems' # for compatibility with JRuby, MRI 1.8, etc
 require 'atomic'
 require 'thread'
 
