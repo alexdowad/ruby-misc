@@ -9,6 +9,7 @@
 
 # Written by Alex Dowad
 # Bug fixes contributed by Alex Kliuchnikau
+# Suggestion on avoiding reader starvation from maniek
 # Thanks to Doug Lea for java.util.concurrent.ReentrantReadWriteLock (used for inspiration)
 
 # Usage:
@@ -63,12 +64,25 @@ class ReadWriteLock
       c = @counter.value
       raise "Too many reader threads!" if (c & MAX_READERS) == MAX_READERS
 
-      # If a writer is running OR waiting, we need to wait
+      # If a writer is waiting when we first queue up, we need to wait
       if c >= WAITING_WRITER
         # But it is possible that the writer could finish and decrement @counter right here...
         @reader_mutex.synchronize do 
           # So check again inside the synchronized section
           @reader_q.wait(@reader_mutex) if @counter.value >= WAITING_WRITER
+        end
+
+        # after a reader has waited once, they are allowed to "barge" ahead of waiting writers
+        # but if a writer is *running*, the reader still needs to wait (naturally)
+        while(true)
+          c = @counter.value
+          if c >= RUNNING_WRITER
+            @reader_mutex.synchronize do
+              @reader_q.wait(@reader_mutex) if @counter.value >= RUNNING_WRITER
+            end
+          else
+            return if @counter.compare_and_swap(c,c+1)
+          end
         end
       else
         break if @counter.compare_and_swap(c,c+1)
@@ -114,7 +128,9 @@ class ReadWriteLock
           # Then we are OK to stop waiting and go ahead
           # Otherwise go back and wait again
           c = @counter.value
-          break if (c < RUNNING_WRITER) && @counter.compare_and_swap(c,c+RUNNING_WRITER-WAITING_WRITER)
+          break if (c < RUNNING_WRITER) && 
+                   ((c & MAX_READERS) == 0) &&
+                   @counter.compare_and_swap(c,c+RUNNING_WRITER-WAITING_WRITER)
         end
         break
       end
@@ -125,10 +141,9 @@ class ReadWriteLock
     while(true)
       c = @counter.value
       if @counter.compare_and_swap(c,c-RUNNING_WRITER)
+        @reader_mutex.synchronize { @reader_q.broadcast }
         if (c & MAX_WRITERS) > 0 # if any writers are waiting...
           @writer_mutex.synchronize { @writer_q.signal }
-        else
-          @reader_mutex.synchronize { @reader_q.broadcast }
         end
         break
       end
@@ -172,7 +187,7 @@ end
 
 require 'benchmark'
 
-TOTAL_THREADS = 40
+TOTAL_THREADS = 12
 
 def test(lock)
   puts "READ INTENSIVE (80% read, 20% write):"
