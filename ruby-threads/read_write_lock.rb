@@ -9,7 +9,7 @@
 
 # Written by Alex Dowad
 # Bug fixes contributed by Alex Kliuchnikau
-# Suggestion on avoiding reader starvation from maniek
+# Suggestion on avoiding reader starvation contributed by maniek
 # Thanks to Doug Lea for java.util.concurrent.ReentrantReadWriteLock (used for inspiration)
 
 # Usage:
@@ -167,6 +167,17 @@ end
 
 if __FILE__ == $0
 
+require 'benchmark'
+
+TOTAL_THREADS = 100 # set as high as practicable, for a better test
+
+# if -i command line option is used, print a 'r' or 'w' each time a reader or writer
+#   runs, so we can see whether either readers or writers are being starved
+$show_interleave = ARGV.include? "-i"
+
+# if -c command line option is used, compare with other implementations
+$compare = ARGV.include? "-c"
+
 # for performance comparison with ReadWriteLock
 class SimpleMutex
   def initialize; @mutex = Mutex.new; end
@@ -185,10 +196,6 @@ class FreeAndEasy
   end
   alias :with_write_lock :with_read_lock
 end
-
-require 'benchmark'
-
-TOTAL_THREADS = 12
 
 def test(lock)
   puts "READ INTENSIVE (80% read, 20% write):"
@@ -210,7 +217,7 @@ def single_test(lock, n_readers, n_writers, reader_iterations=50, writer_iterati
                 Thread.new do
                   reader_iterations.times do
                     lock.with_read_lock do
-                      print "r"
+                      print "r" if $show_interleave
                       mutex.synchronize { bad = true } if (data % 2) != 0
                       sleep(reader_sleep)
                       mutex.synchronize { bad = true } if (data % 2) != 0
@@ -222,7 +229,7 @@ def single_test(lock, n_readers, n_writers, reader_iterations=50, writer_iterati
                 Thread.new do
                   writer_iterations.times do
                     lock.with_write_lock do
-                      print "w"
+                      print "w" if $show_interleave
                       # invariant: other threads should NEVER see "data" as an odd number
                       value = (data += 1)
                       # if a reader runs right now, this invariant will be violated
@@ -245,6 +252,6 @@ def single_test(lock, n_readers, n_writers, reader_iterations=50, writer_iterati
 end
 
 test(ReadWriteLock.new)
-test(SimpleMutex.new)
-test(FreeAndEasy.new)
+test(SimpleMutex.new) if $compare
+test(FreeAndEasy.new) if $compare
 end
