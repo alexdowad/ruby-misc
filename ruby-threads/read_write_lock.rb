@@ -17,6 +17,10 @@
 # lock.with_read_lock  { data.retrieve }
 # lock.with_write_lock { data.modify! }
 
+# NOTE: DON'T try to acquire the write lock while already holding a read lock!
+# OR try to acquire the write lock while you already have it
+# It will lead to deadlock
+
 # Implementation notes: 
 # A goal is to make the uncontended path for both readers/writers lock-free
 # Only if there is reader-writer or writer-writer contention, should locks be used
@@ -178,6 +182,8 @@ $show_interleave = ARGV.include? "-i"
 # if -c command line option is used, compare with other implementations
 $compare = ARGV.include? "-c"
 
+$jruby = defined?(RUBY_ENGINE) && RUBY_ENGINE == "jruby"
+
 # for performance comparison with ReadWriteLock
 class SimpleMutex
   def initialize; @mutex = Mutex.new; end
@@ -195,6 +201,29 @@ class FreeAndEasy
     yield # thread safety is for the birds... I prefer to live dangerously
   end
   alias :with_write_lock :with_read_lock
+end
+
+if $jruby
+  # the Java platform comes with a read-write lock implementation
+  # performance is very close to ReadWriteLock, but just a *bit* slower
+  require 'java'
+  class JavaReadWriteLock
+    def initialize
+      @lock = java.util.concurrent.locks.ReentrantReadWriteLock.new
+    end
+    def with_read_lock
+      @lock.read_lock.lock
+      result = yield
+      @lock.read_lock.unlock
+      result
+    end
+    def with_write_lock
+      @lock.write_lock.lock
+      result = yield
+      @lock.write_lock.unlock
+      result
+    end
+  end
 end
 
 def test(lock)
@@ -252,6 +281,7 @@ def single_test(lock, n_readers, n_writers, reader_iterations=50, writer_iterati
 end
 
 test(ReadWriteLock.new)
+test(JavaReadWriteLock.new) if $compare && $jruby
 test(SimpleMutex.new) if $compare
 test(FreeAndEasy.new) if $compare
 end
