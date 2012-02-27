@@ -117,7 +117,7 @@ module Enumerable
   def parallel_each(&block)
     raise "Must pass a block to parallel_each" if not block_given?
     self.each do |x|
-      JOB_QUEUE.push(lambda do |x|
+      JOB_QUEUE.push(lambda do
         block.call(x)
       end)
     end
