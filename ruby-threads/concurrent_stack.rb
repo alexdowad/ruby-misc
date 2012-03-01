@@ -75,7 +75,7 @@ class RecyclingConcurrentStack
       node.next
     end
     result = node.value
-    FREE.update do |current|
+    FREE_LIST.update do |current|
       node.next = current
       node
     end
@@ -90,8 +90,8 @@ class RecyclingConcurrentStack
   private
   def get_node(val)
     # if contention causes the CAS to fail, just allocate a new node
-    node = FREE.value
-    if node && FREE.compare_and_swap(node,node.next)
+    node = FREE_LIST.value
+    if node && FREE_LIST.compare_and_swap(node,node.next)
       node.value = val
       node
     else
@@ -107,7 +107,7 @@ if __FILE__ == $0
   QUEUE,MUTEX = ConditionVariable.new,Mutex.new
 
   def wait_for_signal
-    MUTEX.synchronize { QUEUE.wait }
+    MUTEX.synchronize { QUEUE.wait(MUTEX) }
   end
   def send_signal
     MUTEX.synchronize { QUEUE.broadcast }
@@ -120,7 +120,8 @@ if __FILE__ == $0
   end
 
   def test_with_threads(klass,n_threads)
-    iterations = ITERATIONS_PER_TEST / threads
+    stack = klass.new
+    iterations = ITERATIONS_PER_TEST / n_threads
     puts "Testing #{klass} with #{n_threads} thread#{'s' if n_threads>1}, iterating #{iterations}x each"
 
     threads = n_threads.times.collect do
@@ -136,10 +137,11 @@ if __FILE__ == $0
     n_gc = GC.count
     sleep(0.001)
 
-    puts Benchmark.measure do
+    result = Benchmark.measure do
       send_signal
       threads.each { |t| t.join }
     end
+    puts result
     puts "Garbage collector ran #{GC.count - n_gc} times"
   end
 
