@@ -134,7 +134,7 @@ if __FILE__ == $0
                   end
                 end
               end
-    n_gc = GC.count
+    n_gc = GC.count if GC.respond_to? :count
     sleep(0.001)
 
     result = Benchmark.measure do
@@ -142,7 +142,7 @@ if __FILE__ == $0
       threads.each { |t| t.join }
     end
     puts result
-    puts "Garbage collector ran #{GC.count - n_gc} times"
+    puts "Garbage collector ran #{GC.count - n_gc} times" if GC.respond_to? :count
   end
 
   test(ThreadSafeStack)
