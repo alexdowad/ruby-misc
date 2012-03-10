@@ -1,5 +1,6 @@
 # 3 thread-safe stack implementations
 # Written by Alex Dowad
+# Fix to benchmarking script contributed by Alex Kliuchnikau
 
 # Usage:
 # stack.push(1)
@@ -135,7 +136,7 @@ if __FILE__ == $0
                 end
               end
     n_gc = GC.count if GC.respond_to? :count
-    sleep(0.001)
+    sleep(0.05)
 
     result = Benchmark.measure do
       send_signal
