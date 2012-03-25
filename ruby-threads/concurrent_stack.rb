@@ -1,6 +1,6 @@
-# 3 thread-safe stack implementations
+# 2 thread-safe stack implementations
 # Written by Alex Dowad
-# Fix to benchmarking script contributed by Alex Kliuchnikau
+# Bug fixes contributed by Alex Kliuchnikau and Remus Rusanu
 
 # Usage:
 # stack.push(1)
@@ -54,53 +54,6 @@ class ConcurrentStack
   end
 end
 
-# same as ConcurrentStack, but additionally recycles popped nodes
-# (to reduce load on GC)
-# a global free list is used, and is also updated using CAS,
-#   in exactly the same way as the stacks themselves
-class RecyclingConcurrentStack
-  Node      = Struct.new(:value,:next)
-  FREE_LIST = Atomic.new(nil)
-
-  def initialize
-    @top = Atomic.new(nil)
-  end
-  def push(value)
-    node = get_node(value)
-    @top.update { |current| node.next = current; node }
-  end
-  def pop
-    node = nil
-    @top.update do |current|
-      return if (node = current).nil?
-      node.next
-    end
-    result = node.value
-    FREE_LIST.update do |current|
-      node.next = current
-      node
-    end
-    result
-  end
-  def peek
-    node = @top.value
-    return if node.nil?
-    node.value
-  end
-
-  private
-  def get_node(val)
-    # if contention causes the CAS to fail, just allocate a new node
-    node = FREE_LIST.value
-    if node && FREE_LIST.compare_and_swap(node,node.next)
-      node.value = val
-      node
-    else
-      Node.new(val,nil)
-    end
-  end
-end
-
 # Test driver
 if __FILE__ == $0
   require 'benchmark'
@@ -148,5 +101,4 @@ if __FILE__ == $0
 
   test(ThreadSafeStack)
   test(ConcurrentStack)
-  test(RecyclingConcurrentStack)
 end
