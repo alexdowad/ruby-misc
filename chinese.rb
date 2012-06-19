@@ -1,4 +1,13 @@
+# For a description of intended usage, run this file without any command-line arguments
+
 require 'set'
+
+# Many Chinese text-processing tasks require a dictionary
+# (for example, converting between characters and Pinyin, converting between simplified and traditional characters, etc)
+# We use the freely-available CEDict dictionary
+# Generally, the dictionary will require some pre-processing for most tasks, but the exact type of pre-processing
+#   needed can be different
+# To increase performance, we do any needed pre-processing lazily
 
 module CEDict
   # delay preparing dictionary data until it is needed
@@ -28,16 +37,16 @@ module CEDict
   CHARACTERS_TO_PINYIN = Promise.new do
     hash = {}
     CEDICT.each do |line|
-      hash[line[0]] = line[2]
-      hash[line[1]] = line[2]
+      hash[line[0]] ||= line[2]
+      hash[line[1]] ||= line[2]
     end
     hash
   end
   CHARACTERS_TO_ENGLISH = Promise.new do
     hash = {}
     CEDICT.each do |line|
-      hash[line[0]] = line[3]
-      hash[line[1]] = line[3]
+      hash[line[0]] ||= line[3]
+      hash[line[1]] ||= line[3]
     end
     hash
   end
@@ -58,6 +67,26 @@ module CEDict
   end
 end
 
+class Integer
+  # both of the following methods assume this integer is a Unicode code point
+  def is_chinese_character?
+    ((self >= 0x2E80 && self <= 0x2FCF) || # radicals
+     (self >= 0x31C0 && self <= 0x31EF) || # strokes
+     (self >= 0x3200 && self <= 0x4DBF) || # CJK letters/months, "compatibility" chars, extension
+     (self >= 0x4E00 && self <= 0x9FFF) || # most CJK chars here
+     (self >= 0xF900 && self <= 0xFAFF))   # another "compatibility" range
+  end
+  def is_chinese_punctuation?
+    # I thought Chinese punctuation should be code points 0x3000-0x303F, but double quotes are coming up as 0x201c
+    #   and 0x201d!
+    # I am also finding 0xff0c, 0xff1a, 0xff1f, etc. used
+    (self >= 0x3000 && self <= 0x303F) || 
+    (self >= 0xFF0C && self <= 0xFF1F) ||
+     self == 0x201C ||
+     self == 0x201D 
+  end
+end
+
 class String
   include CEDict
 
@@ -65,7 +94,7 @@ class String
 
   # guess the encoding of a binary string which contains Chinese text
   # we may need to measure the frequency of common words like 'de'
-  def as_chinese_text
+  def to_chinese_text!
     SUPPORTED_CHINESE_ENCODINGS.each do |encoding|
       begin
         self.force_encoding(encoding)
@@ -78,20 +107,29 @@ class String
 
   # iterator for chinese characters
   def chinese_characters
-    raise "Can't find Chinese characters for encoding: #{encoding}" unless SUPPORTED_CHINESE_ENCODINGS.include?(encoding)
-    return enum_for(:characters) if not block_given?
+    raise "Can't find Chinese characters for encoding: #{encoding}" unless encoding == Encoding::UTF_8
+    return enum_for(:chinese_characters) if not block_given?
     codes = codepoints
-    # note: in Unicode, CJK punctuation is 0x3000-0x303F
     chars do |c|
-      i = codes.next
-      if ((i >= 0x2E80 && i <= 0x2FCF) || # radicals
-          (i >= 0x31C0 && i <= 0x31EF) || # strokes
-          (i >= 0x3200 && i <= 0x4DBF) || # CJK letters/months, "compatibility" chars, extension
-          (i >= 0x4E00 && i <= 0x9FFF) || # most CJK chars here
-          (i >= 0xF900 && i <= 0xFAFF))   # another "compatibility" range
-        yield c
-      end
+      yield c if codes.next.is_chinese_character?
     end
+  end
+
+  # when printing in a monospaced font, Chinese characters and punctuation appear at double the width of
+  #   alphanumeric and other characters
+  def print_width
+    codepoints.reduce(0) do |result,code|
+      result + ((code.is_chinese_character? || code.is_chinese_punctuation?) ? 2 : 1)
+    end
+  end
+
+  # take the extra width of Chinese characters and punctuation into account when centering a string in a 
+  #   fixed-width field...
+  def center(width)
+    spaces_needed = width - self.print_width
+    left_side     = spaces_needed / 2
+    right_side    = spaces_needed - left_side
+    (" " * left_side) << self << (" " * right_side)
   end
 
   # unlike English, Chinese words are not usually separated by spaces
@@ -108,9 +146,18 @@ class String
   #      If by computer, it might be inaccurate itself and thus a poor candidate for training.)
   WORD_REGEXP = Promise.new { Regexp.union(*WORD_LIST.__value__) }
   def chinese_words
-    raise "Can't find Chinese words for encoding: #{encoding}" unless SUPPORTED_ENCODINGS.include?(encoding)
+    raise "Can't find Chinese words for encoding: #{encoding}" unless encoding == Encoding::UTF_8
     return enum_for(:chinese_words) if not block_given?
     self.scan(WORD_REGEXP.__value__) { |w| yield w }
+  end
+
+  # when both Chinese words and intervening punctuation, etc. are needed...
+  # each "chunk" returned by this iterator will either be 1) a Chinese word or 2) a non-Chinese-word char
+  CHUNK_WORD_REGEXP = Promise.new { Regexp.union(WORD_REGEXP.__value__, /./) }
+  def chunk_chinese_words
+    raise "Can't find Chinese words for encoding: #{encoding}" unless encoding == Encoding::UTF_8
+    return enum_for(:chunk_chinese_words) if not block_given?
+    self.scan(CHUNK_WORD_REGEXP.__value__) { |w| yield w }    
   end
 
   # when calling this method, must pass a block to calculate the replacement
@@ -120,12 +167,13 @@ class String
 end
 
 if __FILE__ == $0
-  include Chinese
+
   def histogram(enum)
     count = Hash.new(0)
     enum.each { |x| count[x] += 1 }
     count
   end
+
   def print_table(headings, col_widths, data)
     puts headings.zip(col_widths).map { |h,w| h.ljust(w) }.join
     data.each do |cells|
@@ -143,6 +191,7 @@ if __FILE__ == $0
       }.join
     end
   end
+
   # wrap an enumerator so that a period is printed for every 100
   #   elements which are iterated over
   def progress_counter(enum)
@@ -157,6 +206,7 @@ if __FILE__ == $0
       end
     end
   end
+
   def read_text_file
     file = ARGV.shift
     if file == "-"
@@ -168,9 +218,11 @@ if __FILE__ == $0
       puts "The input file you specified, #{file}, doesn't exist."
       usage
     else
-      File.open(file,'r',:encoding => 'utf-8') { |f| f.read }
+      binary = File.open(file,'r',:encoding => 'binary') { |f| f.read }
+      binary.to_chinese_text!.encode!(Encoding::UTF_8)
     end
   end
+
   def usage
     puts "Usage: ruby chinese.rb <command> <input file>"
     puts "Commands:"
@@ -191,40 +243,49 @@ if __FILE__ == $0
       count = histogram(progress_counter(read_text_file.chinese_characters))
       total = count.values.reduce(0,&:+)
     
-      cum = rank; rank = 0
+      cum = rank = 0
       print_table(%w{Character Rank Frequency Cumulative},
                   [10, 8, 10, 10],
-                  count.sort_by { |v| -v }.map { |k,v| pct = v.to_f/total; [k, rank += 1, pct, cum += pct] })
+                  count.sort_by { |k,v| -v }.map { |k,v| pct = v.to_f/total; [k, rank += 1, pct, cum += pct] })
     },
     'wordfreq' => lambda {
       count = histogram(progress_counter(read_text_file.chinese_words))
       total = count.values.reduce(0,&:+)
 
-      cum = 0; rank = 0
+      cum = rank = 0
       print_table(%w{Word Rank Frequency Cumulative},
                   [8, 8, 10, 10],
                   count.sort_by { |k,v| -v }.map { |k,v| pct = v.to_f/total; [k, rank += 1, pct, cum += pct] })
     },
     'transcribe' => lambda {
-      puts read_text_file.replace_chinese_words! { |word| CHARACTERS_TO_PINYIN.key?(word) ? "#{word} [#{PINYIN[word]}]" : word }
+      puts read_text_file.replace_chinese_words! { |word| CEDict::CHARACTERS_TO_PINYIN.key?(word) ? "#{word} [#{CEDict::CHARACTERS_TO_PINYIN[word]}]" : word }
     },
     'simplified' => lambda {
-      puts read_text_file.replace_chinese_words! { |word| TRADITIONAL_TO_SIMPLIFIED[word] || word }
+      puts read_text_file.replace_chinese_words! { |word| CEDict::TRADITIONAL_TO_SIMPLIFIED[word] || word }
     },
     'traditional' => lambda {
-      puts read_text_file.replace_chinese_words! { |word| SIMPLIFIED_TO_TRADITIONAL[word] || word }
+      puts read_text_file.replace_chinese_words! { |word| CEDict::SIMPLIFIED_TO_TRADITIONAL[word] || word }
     },
     'threeline' => lambda {
-      words = read_text_file.chinese_words
+      chunks = read_text_file.chunk_chinese_words
       line1,line2,line3 = "","",""
-      words.each do |word|
-        english,pinyin = CHARACTERS_TO_ENGLISH[word],CHARACTERS_TO_PINYIN[word]
-        width = [word.length,english.length,pinyin.length].max
-        if (width + line1.width >= 80)
-          puts line1;  puts line2;  puts line3;
+      chunks.each do |chunk|
+        english,pinyin = CEDict::CHARACTERS_TO_ENGLISH[chunk],CEDict::CHARACTERS_TO_PINYIN[chunk]
+
+        unless english && pinyin
+          line1 << chunk << " "
+          line2 << (" " * (chunk.print_width + 1))
+          line3 << (" " * (chunk.print_width + 1))
+          next
+        end
+
+        pinyin.gsub!(' ','')
+        width  = [chunk.print_width,english.print_width,pinyin.print_width].max
+        if (width + line1.length >= 80)
+          puts line1;  puts line2;  puts line3;  puts
           line1.clear; line2.clear; line3.clear;
         end
-        line1 << word.center(width) << " "
+        line1 << chunk.center(width) << " "
         line2 << pinyin.center(width) << " "
         line3 << english.center(width) << " "
       end
