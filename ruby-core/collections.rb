@@ -89,7 +89,7 @@ module Enumerable
   #          => { 'a' => 3, 'b' => 1, 'c' => 1 }
   def to_histogram
     result = Hash.new(0)
-    each { |x| h[x] += 1 }
+    each { |x| result[x] += 1 }
     result
   end
 
