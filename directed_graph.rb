@@ -613,7 +613,7 @@ class Graph
 end
 
 class Node
-  def dup # FIXME: should duplicated node be added to graph???
+  def dup
     node = super
     node.instance_exec(self) do |n|
       @out = n.out.dup
@@ -621,6 +621,7 @@ class Node
     end
     node.out.instance_eval { @this = node; @others = @others.dup }
     node.in.instance_eval  { @this = node; @others = @others.dup }
+    graph.instance_eval { @nodes << node }
     node
   end
 end
