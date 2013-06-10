@@ -856,8 +856,7 @@ end
 
 class Node
   def to_dot
-    # FIXME: escape double-quotes inside captions
-    s = "\"#{hash}\" [label=\"#{caption}\" color=#{color}]\n"
+    s = "\"#{hash}\" [label=\"#{caption.gsub('"') { '\\"' }}\" color=#{color}]\n"
     out.each_with_index { |n,i| s += "\"#{hash}\" -> \"#{n.hash}\" [label=\"#{i}\"]\n" }
     s
   end
