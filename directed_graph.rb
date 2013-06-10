@@ -1,6 +1,10 @@
 # Generic directed-graph implementation
 # (To add application-specific functionality, override Graph and/or Node!)
-# Written by Alex Dowad
+
+# Written by Alex Dowad (alexinbeijing@gmail.com)
+# The original version of this file lives on the Internet at https://github.com/alexdowad/showcase/blob/master/directed_graph.rb
+# Please copy, use, modify, and enjoy it freely, but keep this notice!
+# If you modify, add "# Hacked by ..." below the above name(s)
 
 # One idiosyncratic feature is that the vectors going outward from each node are ordered
 #   (they are a list, not a set)
