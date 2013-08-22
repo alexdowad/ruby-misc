@@ -1,8 +1,8 @@
-This is a library of interesting/useful code written by Alex Dowad, posted here both to share with other developers and for perusal by potential clients. Most of the code is written in Ruby 1.9. (Some may compatible with Ruby 1.8, but I didn't go out of my way to make it so.)
+This is a library of interesting/useful code written by Alex Dowad, posted here both to share with other developers and for perusal by potential clients. Most of the code is written in Ruby 1.9.
 
-ALL code in this repository is free for anybody to copy, modify, and use in any program, without attribution to the author (ie. me). However, if you copy this code and post it on the Internet (with or without modifications), you must include a comment at the top of the file acknowledging me as the original author, and include a link to this GitHub repository. Make sure to test the code yourself -- I have tested it myself but can't guarantee there are no bugs.
+ALL code in this repository is free for anybody to copy, modify, and use in any program, without attribution to the author (ie. me). Enjoy! But make sure to test the code yourself -- I have tested it, but can't guarantee there are no bugs.
 
-If you notice anything which can be improved, please submit a PR; I'll credit you at the top of the relevant file.
+If you notice anything which can be improved, please submit a pull request; I'll credit you at the top of the relevant file.
 
 Overview:
 
