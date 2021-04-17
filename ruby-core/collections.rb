@@ -49,7 +49,7 @@ module Enumerable
 
   #*********************************
   # RAISING THE LEVEL OF ABSTRACTION
-  # (more power, more consiseness)
+  # (more power, less boilerplate)
   #*********************************
 
   # NAME: mappend
