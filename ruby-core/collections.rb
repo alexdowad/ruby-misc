@@ -161,7 +161,7 @@ module Enumerable
   #   generate as many as are needed)
   # "Lazy" methods like these enable the use of infinite sequences,
   #   and in some cases they can increase performance greatly
-  #**********************************************************************  
+  #**********************************************************************
 
   def lazy_select(&block)
     Enumerator.new do |y|
