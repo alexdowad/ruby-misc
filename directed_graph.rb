@@ -1,5 +1,5 @@
 # Generic directed-graph implementation
-# (To add application-specific functionality, override Graph and/or Node!)
+# (To add application-specific functionality, subclass Directed::Graph and/or Directed::Node)
 
 # Written by Alex Dowad (alexinbeijing@gmail.com)
 # The original version of this file lives on the Internet at https://github.com/alexdowad/showcase/blob/master/directed_graph.rb
@@ -38,6 +38,8 @@
 
 require 'alex/core'
 require 'set'
+
+module Directed
 
 #**************
 # CLASS: Graph
@@ -971,4 +973,5 @@ class Node
   def signature
     self.class
   end
+end
 end
