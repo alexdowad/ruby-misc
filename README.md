@@ -1,8 +1,6 @@
-This is a library of interesting/useful code written by Alex Dowad, posted here both to share with other developers and for perusal by potential clients. Most of the code is written in Ruby 1.9.
+This is a collection of old Ruby code code written by Alex Dowad, which might be interesting or useful to some people.
 
-ALL code in this repository is free for anybody to copy, modify, and use in any program, without attribution to the author (ie. me). Enjoy! But make sure to test the code yourself -- I have tested it, but can't guarantee there are no bugs.
-
-If you notice anything which can be improved, please submit a pull request; I'll credit you at the top of the relevant file.
+ALL code in this repository is free for anybody to copy, modify, and use in any program, without attribution to the author (i.e. me). Enjoy! But make sure to test the code yourself if you intend to use it in production.
 
 Overview:
 
